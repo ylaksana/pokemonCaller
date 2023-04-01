@@ -1,13 +1,34 @@
 # This example requires the 'message_content' intent.
 
+# from discord.ext import commands
 import discord
 import requests
 import random
+import asyncio
+import asyncpg
 
 from dotenv import dotenv_values
 
 config = dotenv_values(".env")
 
+# DEFAULT_PREFIX = '!'
+
+# async def get_prefix(bot, message):
+#     if not message.guild:
+#         return commands.when_mentioned_or(DEFAULT_PREFIX)(bot,message)
+    
+#     prefix = await bot.db.fetch('SELECT prefix FROM pokeData WHERE "pokeID" = $1', message.guild.id)
+#     if len(prefix) == 0:
+#         await bot.db.execute('INSERT INTO pokeData("pokeID", prefix) VALUES ($1, $2)', message.guild.id, DEFAULT_PREFIX)
+#     else:
+#         prefix = prefix[0].get("prefix")
+#     return commands.when_mentioned_or(prefix)(bot,message)
+
+# bot = commands.Bot(command_prefix = get_prefix)
+
+# async def create_db_pool():
+#     bot.db = await asyncpg.create_pool(database = "pokeBattler", user = "postgres", password = "")
+#     print("Connection successful")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -24,6 +45,15 @@ async def on_ready():
 async def on_message(message: str):
     if message.author == client.user:
         return
+
+    if message.content.startswith('$db'):
+        conn = await asyncpg.connect(user='postgres', password='DL6SL9!23', database='pokeBattler', host='127.0.0.1')
+        values = await conn.fetch('SELECT * FROM pokeData;',10)
+        print("testing")
+        await channel.send(values)
+        await conn.close()
+    # loop = asyncio.get_event_loop()
+    
 
     if message.content.startswith('$pokeCaller'):
         # =====================================================================
@@ -128,4 +158,11 @@ async def on_message(message: str):
         await channel.send(embed=embed)
 
 
+# @bot.command(aliases=['setpre'])
+# @commands.has_permissions(administrator=True)
+# async def setprefix(ctx, new_prefix):
+#     await bot.db.execute('UPDATE guilds SET prefix = $1 WHERE "guild_id" = $2', new_prefix, ctx.guild.id)
+#     await ctx.send("Prefix updated!")
+    
+# bot.loop.run_until_complete(create_db_pool())
 client.run(config["TOKEN"])
