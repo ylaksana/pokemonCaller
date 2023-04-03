@@ -11,34 +11,29 @@ from dotenv import dotenv_values
 
 config = dotenv_values(".env")
 
-# DEFAULT_PREFIX = '!'
-
-# async def get_prefix(bot, message):
-#     if not message.guild:
-#         return commands.when_mentioned_or(DEFAULT_PREFIX)(bot,message)
-    
-#     prefix = await bot.db.fetch('SELECT prefix FROM pokeData WHERE "pokeID" = $1', message.guild.id)
-#     if len(prefix) == 0:
-#         await bot.db.execute('INSERT INTO pokeData("pokeID", prefix) VALUES ($1, $2)', message.guild.id, DEFAULT_PREFIX)
-#     else:
-#         prefix = prefix[0].get("prefix")
-#     return commands.when_mentioned_or(prefix)(bot,message)
-
-# bot = commands.Bot(command_prefix = get_prefix)
-
-# async def create_db_pool():
-#     bot.db = await asyncpg.create_pool(database = "pokeBattler", user = "postgres", password = "")
-#     print("Connection successful")
-
 intents = discord.Intents.default()
 intents.message_content = True
 
 client = discord.Client(intents=intents)
 
+# TODO: Fix this, it's bad
+class Database:
+    connection = None
+db = Database()
+
 
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
+
+    try:
+        print('Attempting to connect to database')
+        db.connection = await asyncpg.connect(config["DATABASE_STRING"])
+        print('Successfully connected to database')
+    except Exception as e:
+        print('Error connecting to database: ', e)
+        raise
+
 
 
 @client.event
@@ -46,15 +41,142 @@ async def on_message(message: str):
     if message.author == client.user:
         return
 
-    if message.content.startswith('$db'):
-        conn = await asyncpg.connect(user='postgres', password='DL6SL9!23', database='pokeBattler', host='127.0.0.1')
-        values = await conn.fetch('SELECT * FROM pokeData;',10)
-        print("testing")
-        await channel.send(values)
-        await conn.close()
-    # loop = asyncio.get_event_loop()
-    
+    if message.content.startswith('$release'):
+        channel = client.get_channel(770741092474683452)
 
+        words = message.content.split()
+        pokemon = words[1].capitalize()
+
+        print(pokemon)
+
+        deleteCommand = f"DELETE FROM pokedata WHERE pokename='{pokemon}';"
+    
+        try:
+            print('Releasing Pokemon...')
+            records: list[asyncpg.Record] = await db.connection.execute(deleteCommand)
+            await channel.send(f'{pokemon} was released.\nBye-Bye, {pokemon}!')
+        except Exception as e:
+            print(e)
+            raise
+
+    if message.content.startswith('$viewParty'):
+        channel = client.get_channel(770741092474683452)
+    
+        records: list[asyncpg.Record] = await db.connection.fetch('''
+            SELECT * FROM pokedata;
+        ''')
+        trainers: list[asyncpg.Record] = await db.connection.fetch('''
+            SELECT * FROM trainer;
+        ''')
+
+        #================================================================
+        # CHECK IF TRAINER HAS BEEN REGISTERED
+        #================================================================
+
+        foundTrainer = False
+        nameMessage = ''
+        userID = client.user.id
+        for trainer in trainers:
+            if(trainer["ID"] == userID):
+                foundTrainer = True
+                trainerName = trainer["name"]
+                break
+        
+        #================================================================
+        # OUTPUT EACH POKEMON ENTRY FROM THE TABLE
+        #================================================================
+
+        if(foundTrainer):
+            await channel.send(f"{trainerName}'s Party:")
+            count = 1
+            for record in records:  # https://magicstack.github.io/asyncpg/current/api/index.html?highlight=record#asyncpg.Record
+                if record["trainerid"] == userID:
+                    nameMessage += f'Pokemon {count}: **{record["pokename"]}**\n'
+                    nameMessage += f'HP: {record["currenthp"]}'
+                    nameMessage += f' | Status: {record["status"]}\n'
+                    nameMessage += f'Nature: {record["pokenature"]} | Ability: {record["ability"]}\n\n'
+                    nameMessage += f'STATS\n-------------------------------\n'
+                    nameMessage += f'HP {record["hp"]} | ATK {record["atk"]} | DEF {record["def"]}\n'
+                    nameMessage += f'SPATK {record["spatk"]} | SPDEF {record["spdef"]} | SPD {record["speed"]}\n\n'
+                    nameMessage += f'MOVES\n-------------------------------\n'
+                    nameMessage += f'{record["move1"]} (PP {record["move1pp"]}/{record["move1pp"]}) | {record["move2"]} (PP {record["move2pp"]}/{record["move2pp"]})\n'
+                    nameMessage += f'{record["move3"]} (PP {record["move3pp"]}/{record["move3pp"]}) | {record["move4"]} (PP {record["move4pp"]}/{record["move4pp"]})\n\n\n\n'
+                    count += 1
+
+        else:
+            nameMessage += f"Currently, you have no Pokemon that belongs to you."
+            await channel.send(nameMessage)
+
+        embed = discord.Embed(description = nameMessage)
+        await channel.send(embed=embed)
+        
+
+    if message.content.startswith('$catch'):
+        # =====================================================================
+        # SETUP ===============================================================
+        # =====================================================================
+        channel = client.get_channel(770741092474683452)
+
+        words = message.content.split()
+        # Lookup "python ternary" for explanation
+        pokemonName = words[1].lower() if len(words) > 1 else None
+
+        if not pokemonName:
+            await message.channel.send(f'You must supply a Pokemon name.')
+
+        # Get the information from our external API and store it
+        try:
+            pokeInfo: dict = requests.get(f"https://pokeapi.co/api/v2/pokemon/{pokemonName}/").json()
+            pokeNature: dict = requests.get(f'https://pokeapi.co/api/v2/nature').json()
+        except Exception:
+            await message.channel.send(f'Error trying to retrieve Pokemon information.')
+            raise
+
+        level: bool = 5
+        # [{ability:1, is_hidden:true}, {ability:2, is_hidden:true}, {ability:3, is_hidden:true}]
+        pokeAbilities: list[dict] = pokeInfo['abilities']
+        pokeMoves: list[dict] = pokeInfo['moves']
+        pokeStats: list[dict] = pokeInfo['stats']
+        pokeNature: dict = requests.get(f'https://pokeapi.co/api/v2/nature').json()
+
+        # Add the pokemon to the database
+
+        POKEID = pokeInfo["id"]
+        NAME = pokeInfo["species"]["name"].capitalize()
+        abilityNum = random.randrange(0, len(pokeAbilities))
+        ABILITY = pokeAbilities[abilityNum]["ability"]["name"].capitalize()
+        natureNum = random.randrange(0, len(pokeNature["results"]))
+        NATURE = pokeNature["results"][natureNum]["name"].capitalize()
+        STATUS = "None"
+        CURRENTHP = pokeInfo["stats"][0]["base_stat"]
+        HP = pokeInfo["stats"][0]["base_stat"]
+        ATTACK = pokeInfo["stats"][1]["base_stat"]
+        DEF = pokeInfo["stats"][2]["base_stat"]
+        SPATK = pokeInfo["stats"][3]["base_stat"]
+        SPDEF = pokeInfo["stats"][4]["base_stat"]
+        SPEED = pokeInfo["stats"][5]["base_stat"]
+        MOVE1PP = 30
+        MOVE2PP = 25
+        MOVE3PP = 0
+        MOVE4PP = 0
+        TRAINERID = client.user.id
+
+        
+        command = f"INSERT INTO pokedata(pokeid, pokename, pokenature, ability, status, currenthp, hp, atk, def, spatk, spdef, speed, move1, move1pp, move2, move2pp, move3, move3pp, move4, move4pp, trainerid)\
+ VALUES ({POKEID}, '{NAME}', '{NATURE}', '{ABILITY}', '{STATUS}', {CURRENTHP}, {HP}, {ATTACK}, {DEF}, {SPATK}, {SPDEF}, {SPEED}, 'MOVE1', {MOVE1PP}, 'MOVE2', {MOVE2PP}, 'MOVE3', {MOVE3PP}, 'MOVE4', {MOVE4PP}, {TRAINERID});"
+
+        print(command)
+
+        # command.replace('POKENAME', f'{NAME}')
+
+        try:
+            print('Adding new entry to database')
+            records: list[asyncpg.Record] = await db.connection.execute(command)
+            await message.channel.send(f'Successfully caught {NAME}!')
+        except Exception as e:
+            print(e)
+            raise
+        
     if message.content.startswith('$pokeCaller'):
         # =====================================================================
         # SETUP ===============================================================
