@@ -73,15 +73,7 @@ async def on_message(message: str):
         # CHECK IF TRAINER HAS BEEN REGISTERED
         #================================================================
 
-        foundTrainer = False
-        nameMessage = ''
-        userID = client.user.id
-        for trainer in trainers:
-            if(trainer["ID"] == userID):
-                foundTrainer = True
-                trainerName = trainer["name"]
-                break
-        
+       
         #================================================================
         # OUTPUT EACH POKEMON ENTRY FROM THE TABLE
         #================================================================
