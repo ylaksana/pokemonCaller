@@ -81,7 +81,7 @@ async def on_message(message: str):
                 foundTrainer = True
                 trainerName = trainer["name"]
                 break
-        # print(print)
+        print(print)
         #================================================================
         # OUTPUT EACH POKEMON ENTRY FROM THE TABLE
         #================================================================
