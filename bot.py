@@ -22,6 +22,16 @@ class Database:
 db = Database()
 
 
+async def findTrainer(trainersList : list,user_id : str):
+    Found = False 
+    for trainer in trainersList:
+        if trainer["id"] == user_id:
+            Found = True
+        
+    return Found
+    
+
+
 @client.event
 async def on_ready():
     print(f'We have logged in as {client.user}')
@@ -42,14 +52,12 @@ async def on_message(message: str):
         return
 
     if message.content.startswith('$release'):
-        channel = client.get_channel(770741092474683452)
+        channel = client.get_channel(1093244334033338400)
 
         words = message.content.split()
         pokemon = words[1].capitalize()
 
-        print(pokemon)
-
-        deleteCommand = f"DELETE FROM pokedata WHERE pokename='{pokemon}';"
+        deleteCommand = f"DELETE FROM pokestorage WHERE name='{pokemon}';"
     
         try:
             print('Releasing Pokemon...')
@@ -60,8 +68,7 @@ async def on_message(message: str):
             raise
 
     if message.content.startswith('$viewParty'):
-        channel = client.get_channel(770741092474683452)
-    
+        
         records: list[asyncpg.Record] = await db.connection.fetch('''
             SELECT * FROM pokedata;
         ''')
@@ -77,11 +84,11 @@ async def on_message(message: str):
         nameMessage = ''
         userID = client.user.id
         for trainer in trainers:
-            if(trainer["ID"] == userID):
+            if(trainer[id] == userID):
                 foundTrainer = True
                 trainerName = trainer["name"]
                 break
-        print(print)
+        
         #================================================================
         # OUTPUT EACH POKEMON ENTRY FROM THE TABLE
         #================================================================
@@ -115,7 +122,35 @@ async def on_message(message: str):
         # =====================================================================
         # SETUP ===============================================================
         # =====================================================================
-        channel = client.get_channel(770741092474683452)
+        channel = client.get_channel(1093244334033338400)
+        trainers: list[asyncpg.Record] = await db.connection.fetch('''
+                    SELECT * FROM trainers;
+                ''')
+        
+        pokemon: list[asyncpg.Record] = await db.connection.fetch('''
+                    SELECT * FROM pokestorage;
+                ''')
+
+        discordID = client.user.id
+        trainerFound = await findTrainer(trainers,str(discordID))
+
+        if trainerFound == False:
+            try:
+                username = ''
+                command = ''
+                await channel.send(f"You currently don't have any Pokemon, what is your name?")
+                username = await client.wait_for('message', timeout=300.0)
+                username = username.content
+                command = f"INSERT INTO trainers(id, username)VALUES('{discordID}','{username}')"
+                print('Adding new entry to trainers table')
+                records: list[asyncpg.Record] = await db.connection.execute(command)
+                print(f'Added {username} to trainers table!')
+            except asyncio.TimeoutError:
+                await channel.send(f"Try catching a Pokemon another time.")
+            except Exception:
+                print(f'Could not add trainer to database')
+                raise
+
 
         words = message.content.split()
         # Lookup "python ternary" for explanation
@@ -141,7 +176,11 @@ async def on_message(message: str):
 
         # Add the pokemon to the database
 
-        POKEID = pokeInfo["id"]
+        if(len(pokemon)==0):
+            POKEID = 0
+        else:
+            for slot in pokemon:
+                POKEID = int(slot["id"]) + 1
         NAME = pokeInfo["species"]["name"].capitalize()
         abilityNum = random.randrange(0, len(pokeAbilities))
         ABILITY = pokeAbilities[abilityNum]["ability"]["name"].capitalize()
@@ -162,12 +201,10 @@ async def on_message(message: str):
         TRAINERID = client.user.id
 
         
-        command = f"INSERT INTO pokedata(pokeid, pokename, pokenature, ability, status, currenthp, hp, atk, def, spatk, spdef, speed, move1, move1pp, move2, move2pp, move3, move3pp, move4, move4pp, trainerid)\
+        command = f"INSERT INTO pokestorage(id, name, nature, ability, status, currenthp, basehp, statatk, statdef, statspatk, statspdef, statspeed, move1, move1pp, move2, move2pp, move3, move3pp, move4, move4pp, trainerid)\
  VALUES ({POKEID}, '{NAME}', '{NATURE}', '{ABILITY}', '{STATUS}', {CURRENTHP}, {HP}, {ATTACK}, {DEF}, {SPATK}, {SPDEF}, {SPEED}, 'MOVE1', {MOVE1PP}, 'MOVE2', {MOVE2PP}, 'MOVE3', {MOVE3PP}, 'MOVE4', {MOVE4PP}, {TRAINERID});"
 
-        print(command)
-
-        # command.replace('POKENAME', f'{NAME}')
+        # print(command)
 
         try:
             print('Adding new entry to database')
@@ -181,8 +218,7 @@ async def on_message(message: str):
         # =====================================================================
         # SETUP ===============================================================
         # =====================================================================
-        channel = client.get_channel(770741092474683452)
-
+        channel = client.get_channel(1093244334033338400)
         words = message.content.split()
         # Lookup "python ternary" for explanation
         pokemonName = words[1].lower() if len(words) > 1 else None
@@ -277,6 +313,7 @@ async def on_message(message: str):
         else:
             embed.set_image(url=pokeInfo["sprites"]["other"]["official-artwork"]["front_shiny"])
             embed.set_footer(text = "CONGRATS! YOU GOT A SHINY!")
+
         await channel.send(embed=embed)
 
 
